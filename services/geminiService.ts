@@ -12,35 +12,49 @@ export interface AnalysisResult {
   services: string[];
 }
 
+const SYSTEM_INSTRUCTION = `You are an AWS Solutions Architect tutor. 
+Given an AWS article or announcement, explain it specifically for the AWS Certified Solutions Architect – Associate (SAA-C03) exam.
+
+Respond in this exact format for the exam note:
+Why this matters for SAA-C03:
+- Architecture concept: [Explanation]
+- Key AWS services involved: [List]
+- Design trade-off: [Description]
+- Common exam trap: [Specific warning]
+
+Keep the explanation short, factual, and exam-focused. Do not add opinions or extra text.`;
+
 export const analyzeArticleForSAA = async (title: string, summary: string): Promise<AnalysisResult> => {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
-      contents: `
-        Analyze this AWS update for SAA-C03 (Solutions Architect Associate) exam candidates.
-        Title: ${title}
-        Summary: ${summary}
-        
-        Provide:
-        1. Relevance level (Low, Medium, High).
-        2. Relevant SAA-C03 Domains (Secure Architectures, Resilient Architectures, High-Performing Architectures, Cost-Optimized Architectures, Deployment & Operations).
-        3. A short "Exam Note" explaining why this matters for the exam.
-        4. Key AWS Services mentioned.
-      `,
+      model: "gemini-3-pro-preview",
+      contents: `Analyze this AWS update:
+      Title: ${title}
+      Summary: ${summary}`,
       config: {
+        systemInstruction: SYSTEM_INSTRUCTION,
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            relevance: { type: Type.STRING, enum: ['Low', 'Medium', 'High'] },
+            relevance: { 
+              type: Type.STRING, 
+              enum: ['Low', 'Medium', 'High'],
+              description: "Relevance to SAA-C03 exam objectives"
+            },
             domains: { 
               type: Type.ARRAY, 
-              items: { type: Type.STRING }
+              items: { type: Type.STRING },
+              description: "Relevant SAA-C03 Domains (Secure Architectures, Resilient Architectures, High-Performing Architectures, Cost-Optimized Architectures, Deployment & Operations)"
             },
-            examNote: { type: Type.STRING },
+            examNote: { 
+              type: Type.STRING,
+              description: "The formatted explanation following the tutor's rules"
+            },
             services: { 
               type: Type.ARRAY, 
-              items: { type: Type.STRING }
+              items: { type: Type.STRING },
+              description: "Key AWS Services mentioned"
             }
           },
           required: ['relevance', 'domains', 'examNote', 'services']

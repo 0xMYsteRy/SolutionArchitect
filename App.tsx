@@ -4,15 +4,17 @@ import {
   AppState, 
   Article, 
   SAADomain, 
-  Theme 
-} from './types';
+  User 
+} from './types.ts';
 import { 
   AWS_SERVICES, 
   RSS_SOURCES 
-} from './constants';
-import { fetchMockArticles } from './services/rssService';
-import ArticleCard from './components/ArticleCard';
-import ArticleModal from './components/ArticleModal';
+} from './constants.tsx';
+import { fetchMockArticles } from './services/rssService.ts';
+import { updateUserData } from './services/persistenceService.ts';
+import ArticleCard from './components/ArticleCard.tsx';
+import ArticleModal from './components/ArticleModal.tsx';
+import AuthModal from './components/AuthModal.tsx';
 import { 
   Search, 
   Menu, 
@@ -32,7 +34,11 @@ import {
   Layers,
   Wrench,
   BookOpen,
-  BarChart3
+  BarChart3,
+  LogIn,
+  LogOut,
+  History,
+  ChevronDown
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -43,12 +49,16 @@ const App: React.FC = () => {
     selectedSources: [],
     searchQuery: '',
     showBookmarksOnly: false,
+    showHistoryOnly: false,
     isLoading: true,
     isDarkMode: window.matchMedia('(prefers-color-scheme: dark)').matches,
+    user: null,
   });
 
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
 
   useEffect(() => {
     const loadArticles = async () => {
@@ -62,10 +72,38 @@ const App: React.FC = () => {
       }
     };
     loadArticles();
+
+    // Check for existing session
+    const activeSession = localStorage.getItem('active_saa_hub_user');
+    if (activeSession) {
+      try {
+        const userData = JSON.parse(activeSession);
+        setState(prev => ({ ...prev, user: userData }));
+      } catch (e) {
+        console.error("Failed to parse user session", e);
+      }
+    }
   }, []);
 
+  const handleLogin = (user: User) => {
+    setState(prev => ({ ...prev, user }));
+    localStorage.setItem('active_saa_hub_user', JSON.stringify(user));
+    setIsAuthModalOpen(false);
+  };
+
+  const handleLogout = () => {
+    setState(prev => ({ ...prev, user: null, showBookmarksOnly: false, showHistoryOnly: false }));
+    localStorage.removeItem('active_saa_hub_user');
+    setIsProfileDropdownOpen(false);
+  };
+
   const filteredArticles = useMemo(() => {
-    return state.articles.filter(article => {
+    const articlesWithBookmarkState = state.articles.map(article => ({
+      ...article,
+      isBookmarked: state.user?.bookmarks.includes(article.id) || false
+    }));
+
+    return articlesWithBookmarkState.filter(article => {
       const matchesSearch = 
         article.title.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
         article.summary.toLowerCase().includes(state.searchQuery.toLowerCase()) ||
@@ -81,16 +119,41 @@ const App: React.FC = () => {
         state.selectedSources.includes(article.source);
 
       const matchesBookmarks = !state.showBookmarksOnly || article.isBookmarked;
+      const matchesHistory = !state.showHistoryOnly || state.user?.history.includes(article.id);
 
-      return matchesSearch && matchesDomains && matchesServices && matchesSources && matchesBookmarks;
+      return matchesSearch && matchesDomains && matchesServices && matchesSources && matchesBookmarks && matchesHistory;
     });
   }, [state]);
 
   const toggleBookmark = (id: string) => {
-    setState(prev => ({
-      ...prev,
-      articles: prev.articles.map(a => a.id === id ? { ...a, isBookmarked: !a.isBookmarked } : a)
-    }));
+    if (!state.user) {
+      setIsAuthModalOpen(true);
+      return;
+    }
+
+    const currentBookmarks = [...state.user.bookmarks];
+    const index = currentBookmarks.indexOf(id);
+    const newBookmarks = index > -1 
+      ? currentBookmarks.filter(bid => bid !== id)
+      : [...currentBookmarks, id];
+
+    const updatedUser = updateUserData(state.user.email, { bookmarks: newBookmarks });
+    if (updatedUser) {
+      setState(prev => ({ ...prev, user: updatedUser }));
+      localStorage.setItem('active_saa_hub_user', JSON.stringify(updatedUser));
+    }
+  };
+
+  const trackHistory = (id: string) => {
+    if (!state.user) return;
+    if (state.user.history.includes(id)) return;
+
+    const newHistory = [id, ...state.user.history.slice(0, 49)]; // Limit to 50 items
+    const updatedUser = updateUserData(state.user.email, { history: newHistory });
+    if (updatedUser) {
+      setState(prev => ({ ...prev, user: updatedUser }));
+      localStorage.setItem('active_saa_hub_user', JSON.stringify(updatedUser));
+    }
   };
 
   const toggleDomain = (domain: SAADomain) => {
@@ -142,18 +205,31 @@ const App: React.FC = () => {
               <h3 className="px-4 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Navigation</h3>
               <nav className="space-y-1">
                 <button 
-                  onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: false, selectedDomains: [], selectedServices: [] }))}
-                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${!state.showBookmarksOnly && state.selectedDomains.length === 0 ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                  onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: false, showHistoryOnly: false, selectedDomains: [], selectedServices: [] }))}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${!state.showBookmarksOnly && !state.showHistoryOnly && state.selectedDomains.length === 0 ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                 >
                   <LayoutDashboard className="w-5 h-5" />
                   Main Dashboard
                 </button>
                 <button 
-                  onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: true }))}
+                  onClick={() => {
+                    if (!state.user) setIsAuthModalOpen(true);
+                    else setState(prev => ({ ...prev, showBookmarksOnly: true, showHistoryOnly: false }));
+                  }}
                   className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${state.showBookmarksOnly ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
                 >
                   <Bookmark className="w-5 h-5" />
                   Bookmarked
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!state.user) setIsAuthModalOpen(true);
+                    else setState(prev => ({ ...prev, showHistoryOnly: true, showBookmarksOnly: false }));
+                  }}
+                  className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all ${state.showHistoryOnly ? 'bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 font-bold' : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'}`}
+                >
+                  <History className="w-5 h-5" />
+                  Reading History
                 </button>
               </nav>
             </div>
@@ -181,8 +257,8 @@ const App: React.FC = () => {
               </nav>
             </div>
 
-             {/* Feed Sources */}
-             <div className="mb-8">
+            {/* Feed Sources */}
+            <div className="mb-8">
               <h3 className="px-4 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Feed Sources</h3>
               <nav className="space-y-1">
                 {RSS_SOURCES.map(source => (
@@ -197,25 +273,19 @@ const App: React.FC = () => {
                 ))}
               </nav>
             </div>
-
-            {/* Top Services */}
-            <div>
-              <h3 className="px-4 text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">Hot Services</h3>
-              <div className="flex flex-wrap gap-2 px-4">
-                {AWS_SERVICES.slice(0, 10).map(service => (
-                  <button
-                    key={service}
-                    onClick={() => toggleService(service)}
-                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all border ${state.selectedServices.includes(service) ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 border-transparent' : 'bg-transparent border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:border-slate-400'}`}
-                  >
-                    {service}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
           
-          <div className="p-6 border-t border-slate-100 dark:border-slate-800">
+          <div className="p-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
+             {!state.user && (
+               <button 
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl bg-orange-500 text-white font-bold shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition-all"
+                >
+                  <LogIn className="w-5 h-5" />
+                  Sign In to Sync
+                </button>
+             )}
+             
              <button 
                 onClick={() => setState(prev => ({ ...prev, isDarkMode: !prev.isDarkMode }))}
                 className="w-full flex items-center justify-between px-4 py-2 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
@@ -266,16 +336,57 @@ const App: React.FC = () => {
               >
                 <RefreshCw className="w-5 h-5" />
               </button>
+              
               <div className="h-8 w-[1px] bg-slate-200 dark:bg-slate-800 mx-2"></div>
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-gradient-to-tr from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                  JD
+              
+              {state.user ? (
+                <div className="relative">
+                  <button 
+                    onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
+                    className="flex items-center gap-3 p-1.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-all group"
+                  >
+                    <div className="w-9 h-9 bg-gradient-to-tr from-orange-400 to-orange-600 rounded-full flex items-center justify-center text-white font-bold text-sm shadow-md">
+                      {state.user.name.substring(0, 2).toUpperCase()}
+                    </div>
+                    <div className="hidden lg:block text-left">
+                      <p className="text-xs font-bold text-slate-900 dark:text-white leading-none mb-0.5">{state.user.name}</p>
+                      <p className="text-[10px] text-orange-500 font-bold uppercase tracking-wider">Candidate</p>
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isProfileDropdownOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {isProfileDropdownOpen && (
+                    <>
+                      <div className="fixed inset-0 z-[40]" onClick={() => setIsProfileDropdownOpen(false)}></div>
+                      <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-[50] animate-in slide-in-from-top-2 duration-200">
+                        <div className="px-4 py-3 mb-2 border-b border-slate-50 dark:border-slate-800">
+                          <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Signed in as</p>
+                          <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{state.user.email}</p>
+                        </div>
+                        <button className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors">
+                          <Settings className="w-4 h-4" />
+                          Account Settings
+                        </button>
+                        <button 
+                          onClick={handleLogout}
+                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-900/10 rounded-xl transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          Log Out
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <div className="hidden lg:block">
-                  <p className="text-xs font-bold text-slate-900 dark:text-white">John Doe</p>
-                  <p className="text-[10px] text-orange-500 font-bold">PRO LEARNER</p>
-                </div>
-              </div>
+              ) : (
+                <button 
+                  onClick={() => setIsAuthModalOpen(true)}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl text-sm font-bold hover:opacity-90 transition-all"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Sign In
+                </button>
+              )}
             </div>
           </header>
 
@@ -287,30 +398,34 @@ const App: React.FC = () => {
                   <div className="flex items-center gap-3 mb-2">
                     <BookOpen className="w-6 h-6 text-orange-500" />
                     <h2 className="text-3xl font-black text-slate-900 dark:text-white">
-                      {state.showBookmarksOnly ? 'Your Learning List' : 'Architectural Feed'}
+                      {state.showBookmarksOnly ? 'Your Learning List' : state.showHistoryOnly ? 'Reading History' : 'Architectural Feed'}
                     </h2>
                   </div>
                   <p className="text-slate-500 dark:text-slate-400">
                     {state.showBookmarksOnly 
                       ? `Reviewing your ${filteredArticles.length} curated exam preparation resources.` 
-                      : `Scanning official AWS channels for SAA-C03 relevance. ${filteredArticles.length} updates found.`}
+                      : state.showHistoryOnly 
+                        ? `A log of your recently analyzed SAA updates.`
+                        : `Scanning official AWS channels for SAA-C03 relevance. ${filteredArticles.length} updates found.`}
                   </p>
                 </div>
 
                 <div className="flex items-center gap-3">
                   <div className="bg-white dark:bg-slate-900 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 flex shadow-sm">
                     <button 
-                      onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: false }))}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${!state.showBookmarksOnly ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' : 'text-slate-500'}`}
+                      onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: false, showHistoryOnly: false }))}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${!state.showBookmarksOnly && !state.showHistoryOnly ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' : 'text-slate-500'}`}
                     >
                       All
                     </button>
-                    <button 
-                      onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: true }))}
-                      className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${state.showBookmarksOnly ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' : 'text-slate-500'}`}
-                    >
-                      Bookmarks
-                    </button>
+                    {state.user && (
+                      <button 
+                        onClick={() => setState(prev => ({ ...prev, showBookmarksOnly: true, showHistoryOnly: false }))}
+                        className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${state.showBookmarksOnly ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-md' : 'text-slate-500'}`}
+                      >
+                        Bookmarks
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -328,7 +443,10 @@ const App: React.FC = () => {
                       key={article.id} 
                       article={article} 
                       onToggleBookmark={toggleBookmark}
-                      onShowDetail={(a) => setSelectedArticle(a)}
+                      onShowDetail={(a) => {
+                        setSelectedArticle(a);
+                        trackHistory(a.id);
+                      }}
                     />
                   ))}
                 </div>
@@ -342,7 +460,7 @@ const App: React.FC = () => {
                     Adjust your filters or search keywords to find relevant SAA-C03 preparation material.
                   </p>
                   <button 
-                    onClick={() => setState(prev => ({ ...prev, searchQuery: '', selectedDomains: [], selectedServices: [], selectedSources: [], showBookmarksOnly: false }))}
+                    onClick={() => setState(prev => ({ ...prev, searchQuery: '', selectedDomains: [], selectedServices: [], selectedSources: [], showBookmarksOnly: false, showHistoryOnly: false }))}
                     className="mt-6 px-6 py-2 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-xl font-bold hover:opacity-90 transition-opacity"
                   >
                     Reset All Filters
@@ -353,31 +471,26 @@ const App: React.FC = () => {
           </div>
         </main>
 
+        {/* Auth Modal */}
+        {isAuthModalOpen && (
+          <AuthModal 
+            onClose={() => setIsAuthModalOpen(false)}
+            onLogin={handleLogin}
+          />
+        )}
+
         {/* Article Detail Modal */}
         {selectedArticle && (
           <ArticleModal 
-            article={selectedArticle} 
+            article={{
+              ...selectedArticle,
+              isBookmarked: state.user?.bookmarks.includes(selectedArticle.id) || false
+            }} 
             onClose={() => setSelectedArticle(null)}
             onToggleBookmark={toggleBookmark}
           />
         )}
       </div>
-
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: transparent;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(148, 163, 184, 0.2);
-          border-radius: 10px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(148, 163, 184, 0.4);
-        }
-      `}</style>
     </div>
   );
 };

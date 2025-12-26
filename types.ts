@@ -13,6 +13,18 @@ export enum RelevanceLevel {
   HIGH = 'High',
 }
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  bookmarks: string[]; // IDs of bookmarked articles
+  history: string[]; // IDs of viewed articles
+  preferences: {
+    favoriteServices: string[];
+    darkMode: boolean;
+  };
+}
+
 export interface Article {
   id: string;
   title: string;
@@ -24,7 +36,7 @@ export interface Article {
   services: string[];
   relevance: RelevanceLevel;
   examNote?: string;
-  isBookmarked: boolean;
+  isBookmarked: boolean; // Virtual property based on user state
 }
 
 export interface AppState {
@@ -34,8 +46,10 @@ export interface AppState {
   selectedSources: string[];
   searchQuery: string;
   showBookmarksOnly: boolean;
+  showHistoryOnly: boolean;
   isLoading: boolean;
   isDarkMode: boolean;
+  user: User | null;
 }
 
 export type Theme = 'light' | 'dark';

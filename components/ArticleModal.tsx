@@ -56,18 +56,18 @@ const ArticleModal: React.FC<ArticleModalProps> = ({ article, onClose, onToggleB
           <section className="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-900/30 rounded-xl p-5 mb-8">
             <div className="flex items-center gap-2 mb-4">
               <BrainCircuit className="w-5 h-5 text-orange-600 dark:text-orange-400" />
-              <h3 className="text-lg font-bold text-orange-900 dark:text-orange-100">SAA-C03 Learning Mode</h3>
+              <h3 className="text-lg font-bold text-orange-900 dark:text-orange-100">SAA-C03 Tutor Insights</h3>
             </div>
-            <p className="text-orange-800 dark:text-orange-200/80 mb-6 italic">
-              "{article.examNote}"
-            </p>
+            <div className="text-orange-800 dark:text-orange-200/80 mb-6 text-sm leading-relaxed whitespace-pre-wrap font-medium">
+              {article.examNote}
+            </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t border-orange-200 dark:border-orange-800/50">
               <div>
                 <h4 className="text-xs font-bold text-orange-900/50 dark:text-orange-200/40 uppercase mb-2">Affected Domains</h4>
                 <div className="flex flex-wrap gap-2">
                   {article.domains.map(d => (
-                    <span key={d} className={`text-[10px] px-2.5 py-1 rounded-lg border shadow-sm ${DOMAIN_COLORS[d]}`}>
+                    <span key={d} className={`text-[10px] px-2.5 py-1 rounded-lg border shadow-sm ${DOMAIN_COLORS[d as keyof typeof DOMAIN_COLORS] || 'bg-slate-100'}`}>
                       {d}
                     </span>
                   ))}
